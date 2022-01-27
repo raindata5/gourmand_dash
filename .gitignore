@@ -2,3 +2,5 @@
 .DS_Store
 data/
 ipynb_checkpoints/
+./app/.ipynb_checkpoints/*
+*.ipynb
