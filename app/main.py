@@ -11,6 +11,11 @@ import plotly.graph_objects as go
 import plotly.express as px
 from dash.exceptions import PreventUpdate
 
+def fig_template():
+    fig = go.Figure()
+    fig.layout.paper_bgcolor = '#E5ECF6'
+    fig.layout.plot_bgcolor = '#E5ECF6'
+    return fig
 
 path = Path(os.getcwd())
 base_dir = path.parent
@@ -19,10 +24,10 @@ data_dir
 
 dv_runs = pd.read_csv(os.path.join(data_dir, "dv_runs.csv"), delimiter=',', quotechar='"', header='infer')
 bus_cat_hold_loc_parquet = pd.read_parquet(os.path.join(data_dir, 'bus_cat_hold_loc'), engine='pyarrow')
-df2_groups_pivoted_100_sorted_cut = pd.read_parquet(os.path.join(data_dir, 'df2_groups_pivoted_100_sorted_cut'), engine='pyarrow')
+df2_groups_pivoted_100_sorted_cut_imputed = pd.read_parquet(os.path.join(data_dir, 'df2_groups_pivoted_100_sorted_cut_imputed'), engine='pyarrow')
 
-app = dash.Dash(__name__, external_stylesheets=[dbc.themes.DARKLY])
-# app = JupyterDash(__name__, external_stylesheets=[dbc.themes.COSMO])
+# app = dash.Dash(__name__, external_stylesheets=[dbc.themes.DARKLY])
+app = JupyterDash(__name__, external_stylesheets=[dbc.themes.COSMO])
 
 app.layout = html.Div([
     html.H1('Gourmand Database',
@@ -92,22 +97,43 @@ app.layout = html.Div([
         ], label='Background Information')
     ,dbc.Tab([
         html.Br()
-        ,dcc.Dropdown(id = 'dag_state_dropdown_menu', options=[
-        {'label':state.title() , 'value':state} for state in list(dv_runs['dag_state'].unique())
-    ])
-    ,dcc.Dropdown(id = 'date_dropdown_menu',options=[
-        {'label':date , 'value':date} for date in sorted(list(dv_runs['execution_date'].unique()))
-    ])
-    ,dcc.Graph(id='runtime_chart')
-    ], label = 'Airflow Task Graph')
+        ,dbc.Row(
+            [
+            dbc.Col(
+                dcc.Dropdown(id = 'dag_state_dropdown_menu', options=[
+                    {'label':state.title() , 'value':state} for state in list(dv_runs['dag_state'].unique())
+            ])
+        )
+            ,dbc.Col(
+                dcc.Dropdown(id = 'date_dropdown_menu',options=[
+                    {'label':date , 'value':date} for date in sorted(list(dv_runs['execution_date'].unique()))
+            ])
+        )
+            ]
+        )
+
+        ,dcc.Graph(id='runtime_chart')
+        ], label = 'Airflow Task Graph'
+    )
     ,dbc.Tab(
         [
             dcc.Dropdown(
                 id="cond-prob-chart1-dccd"
-                ,options=[{'label':state, 'value':state} for state in df2_groups_pivoted_100_sorted_cut.StateName.unique()]
+                ,options=[{'label':state, 'value':state} for state in df2_groups_pivoted_100_sorted_cut_imputed.StateName.unique()]
             )
             ,dcc.Graph(
                 id='cond-prob-chart1'
+            )
+            ,html.Br()
+            ,dbc.Label("States")
+            ,dcc.Dropdown(
+                id="cond-prob-chart2-dccd"
+                ,options = [{'label':state, 'value':state} for state in df2_groups_pivoted_100_sorted_cut_imputed.StateName.unique()]
+                ,multi=True
+                ,placeholder='Veuillez choisir un ou plusieurs pays'         
+            )
+            ,dcc.Graph(
+                id='cond-prob-chart2'
             )
         ]
         ,label="Conditional Probabilities"
@@ -123,6 +149,8 @@ app.layout = html.Div([
 #                 ]
 #             )
 ]
+#     , style={'backgroundColor': '#E5ECF6'}
+    
 )
 
 @app.callback(Output('runtime_chart','figure'),
@@ -184,14 +212,18 @@ def plot_by_state_day(state):
     ,Input('cond-prob-chart1-dccd', 'value')
 )
 def cond_prob_1(state):
-    fig = px.bar(df2_groups_pivoted_100_sorted_cut[df2_groups_pivoted_100_sorted_cut['StateName']==state],
-    x=[1,2,3,4,5],
+    if not state:
+        raise PreventUpdate
+    # TODO: have a separate dataframe be placed in when no state is selected
+    fig = px.bar((df2_groups_pivoted_100_sorted_cut_imputed[df2_groups_pivoted_100_sorted_cut_imputed['StateName']==state] if state else df2_groups_pivoted_100_sorted_cut_imputed),
+    x=['one','two','three','four','five'],
     y='PaymentLevelName',
     hover_name='StateName',
     orientation='h',
     barmode='stack',
-    height=20 + (20*df2_groups_pivoted_100_sorted_cut[df2_groups_pivoted_100_sorted_cut['StateName']==state].shape[0]),
-    title=f'Ratings by Payment level - {state}')
+    height=600 ,
+    title=(f'Ratings by Payment level - {state}' if state else 'Ratings by Payment level'))
+    
     fig.layout.legend.orientation = 'h'
     fig.layout.legend.title = 'Rating'
     # fig.layout.legend.title = None
@@ -205,3 +237,29 @@ def cond_prob_1(state):
     x=1
     ))
     return fig
+
+# make usre to plug in zeros for fig
+
+
+# if __name__ == '__main__':
+# app.run_server(mode='jupyterlab')
+
+app.run_server(mode='jupyterlab')
+
+
+states = ['Florida', 'Texas', 'New York', 'California']
+
+df = df2_groups_pivoted_100_sorted_cut_imputed.loc[df2_groups_pivoted_100_sorted_cut_imputed['StateName'].isin(states)]
+px.bar(
+    df,
+    x=['one','two','three','four','five'],
+    y='PaymentLevelName',
+    facet_row = 'StateName',
+    hover_name='StateName',
+    orientation='h',
+    barmode='stack',
+    height=100 + 250*len(states),
+    labels={'PaymentLevelName': 'PaymentLevelName'},
+    title='<br>'.join(['PaymentLevelName', ', '.join(states)])
+
+)
