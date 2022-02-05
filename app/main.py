@@ -100,14 +100,16 @@ app.layout = html.Div([
         ,dbc.Row(
             [
             dbc.Col(
-                dcc.Dropdown(id = 'dag_state_dropdown_menu', options=[
+                dcc.Dropdown(
+                    id = 'dag_state_dropdown_menu', options=[
                     {'label':state.title() , 'value':state} for state in list(dv_runs['dag_state'].unique())
-            ])
+            ]) , md={'size': 12}, lg={'size': 5, 'offset':1}
         )
             ,dbc.Col(
-                dcc.Dropdown(id = 'date_dropdown_menu',options=[
+                dcc.Dropdown(
+                    id = 'date_dropdown_menu',options=[
                     {'label':date , 'value':date} for date in sorted(list(dv_runs['execution_date'].unique()))
-            ])
+            ]) , md={'size': 12}, lg={'size': 5, 'offset':0} 
         )
             ]
         )
@@ -237,6 +239,36 @@ def cond_prob_1(state):
     x=1
     ))
     return fig
+@app.callback(
+    Output('cond-prob-chart2', 'figure')
+    ,Input("cond-prob-chart2-dccd", 'value')
+)
+def cond_prob_2(states):
+    if not states:
+        raise PreventUpdate
+    df = df2_groups_pivoted_100_sorted_cut_imputed.loc[df2_groups_pivoted_100_sorted_cut_imputed['StateName'].isin(states)]
+    fig = px.bar(
+    df,
+    x=['one','two','three','four','five'],
+    y='PaymentLevelName',
+    facet_row = 'StateName',
+    hover_name='StateName',
+    orientation='h',
+    barmode='stack',
+    height=100 + 250*len(states),
+    labels={'PaymentLevelName': 'PaymentLevelName'},
+    title='<br>'.join(['PaymentLevelName', ', '.join(states)])
+
+    )
+    fig.layout.legend.title = 'Rating'
+    fig.update_layout(legend=dict(
+    orientation="h",
+    yanchor="bottom",
+    y=1.02,
+    xanchor="right",
+    x=1
+    ))
+    return fig
 
 # make usre to plug in zeros for fig
 
@@ -250,16 +282,3 @@ app.run_server(mode='jupyterlab')
 states = ['Florida', 'Texas', 'New York', 'California']
 
 df = df2_groups_pivoted_100_sorted_cut_imputed.loc[df2_groups_pivoted_100_sorted_cut_imputed['StateName'].isin(states)]
-px.bar(
-    df,
-    x=['one','two','three','four','five'],
-    y='PaymentLevelName',
-    facet_row = 'StateName',
-    hover_name='StateName',
-    orientation='h',
-    barmode='stack',
-    height=100 + 250*len(states),
-    labels={'PaymentLevelName': 'PaymentLevelName'},
-    title='<br>'.join(['PaymentLevelName', ', '.join(states)])
-
-)
