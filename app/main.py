@@ -10,12 +10,27 @@ import os
 import plotly.graph_objects as go
 import plotly.express as px
 from dash.exceptions import PreventUpdate
+import datetime
+from typing import Union
 
 def fig_template():
     fig = go.Figure()
     fig.layout.paper_bgcolor = '#E5ECF6'
     fig.layout.plot_bgcolor = '#E5ECF6'
     return fig
+
+def to_unix_or_reg(the_date: Union[str, int], the_format: str, option: str):
+    unix_format = '%s'
+    if option == 'unix':
+        new_date = datetime.datetime.strptime(the_date, the_format).strftime(unix_format)
+    elif option == 'reg':
+        new_date = datetime.datetime.strptime(the_date, unix_format).strftime(the_format)
+    elif option =='unix_reg':
+        new_date = datetime.datetime.fromtimestamp(the_date).strftime(the_format)
+    else:
+        print('no good option')
+        exit(0)
+    return new_date
 
 path = Path(os.getcwd())
 base_dir = path.parent
@@ -25,6 +40,10 @@ data_dir
 dv_runs = pd.read_csv(os.path.join(data_dir, "dv_runs.csv"), delimiter=',', quotechar='"', header='infer')
 bus_cat_hold_loc_parquet = pd.read_parquet(os.path.join(data_dir, 'bus_cat_hold_loc'), engine='pyarrow')
 df2_groups_pivoted_100_sorted_cut_imputed = pd.read_parquet(os.path.join(data_dir, 'df2_groups_pivoted_100_sorted_cut_imputed'), engine='pyarrow')
+electric1 = px.colors.sequential.Electric[0]
+days = sorted(bus_cat_hold_loc_parquet.CloseDate.unique().tolist())
+the_format = "%Y-%m-%d"
+unix_format = '%s'
 
 # app = dash.Dash(__name__, external_stylesheets=[dbc.themes.DARKLY])
 app = JupyterDash(__name__, external_stylesheets=[dbc.themes.COSMO])
@@ -136,6 +155,28 @@ app.layout = html.Div([
             )
             ,dcc.Graph(
                 id='cond-prob-chart2'
+            )
+            ,dcc.Slider(
+        id='payment-lvl-slider', min=0, max=4, step=1, dots=True, included=False, value=5, marks={
+            0: {'label': 'Unknown', 'style': {'color': electric1, 'fontWeight': 'bold'}},
+            1: {'label': 'Very Low', 'style': {'color': electric1, 'fontWeight': 'bold'}},
+            2: {'label': 'Low', 'style': {'color': electric1, 'fontWeight': 'bold'}},
+            3: {'label': 'High', 'style': {'color': electric1, 'fontWeight': 'bold'}},
+            4: {'label': 'Very High', 'style': {'color': electric1, 'fontWeight': 'bold'}}
+                }
+            )
+            ,dcc.Slider(
+                id='close-data-slider'
+                ,min=int(to_unix_or_reg(days[0], format, 'unix'))
+                ,max=int(to_unix_or_reg(days[-1], format, 'unix'))
+                ,step=1
+                ,dots=True
+                ,included=False
+                ,value= int(to_unix_or_reg('2022-01-13', format, 'unix'))
+                ,marks= {int(to_unix_or_reg(day, format, 'unix')): {'label': to_unix_or_reg(day, format, 'reg'), 'style':{'color': electric1, 'fontWeight':'bold'}}  for day in days}
+            )
+            , dcc.Graph(
+                id='slider-graph'
             )
         ]
         ,label="Conditional Probabilities"
@@ -269,6 +310,17 @@ def cond_prob_2(states):
     x=1
     ))
     return fig
+@app.callback(
+    Output('slider-graph', 'figure')
+    ,Input('payment-lvl-slider', 'value')
+    ,Input('close-data-slider', 'value')
+)
+def plot_day_payment_lvl(lvl, day):
+    day = bus_cat_hold_loc_parquet.loc[(bus_cat_hold_loc_parquet['PaymentLevelName'] == lvl) & (bus_cat_hold_loc_parquet['CloseDate'] == day)]
+    fig = go.Figure()
+    fig.layout.xaxis.title = lvl
+    fig.layout.yaxis.title = day
+    return fig
 
 # make usre to plug in zeros for fig
 
@@ -279,6 +331,39 @@ def cond_prob_2(states):
 app.run_server(mode='jupyterlab')
 
 
-states = ['Florida', 'Texas', 'New York', 'California']
 
-df = df2_groups_pivoted_100_sorted_cut_imputed.loc[df2_groups_pivoted_100_sorted_cut_imputed['StateName'].isin(states)]
+
+
+# showing multiple values on a scatter/line plot
+states = ['Florida', 'Texas', 'Alaska']
+
+state_date_df = bus_cat_hold_loc_parquet.groupby(['StateName', 'CloseDate'], as_index=False)['ReviewCount'].sum()
+state_date_df_filter = state_date_df[state_date_df.StateName.isin(states)]
+state_date_df_filter
+
+fig = go.Figure()
+fig.add_scatter(x=state_date_df_filter['CloseDate'], y=state_date_df_filter['ReviewCount'], mode='lines+markers+text')
+fig.show()
+
+# doing the same in plotly ex
+fig = px.scatter(state_date_df_filter, x='CloseDate', y='ReviewCount', color='StateName')
+
+figlines = px.line(state_date_df_filter, x='CloseDate', y='ReviewCount', color='StateName')
+
+for trace in figlines.data:
+    trace.showlegend = False
+    fig.add_trace(trace)
+fig.show()
+
+#
+date = '2022-01-13'
+y = 'ReviewCount'
+
+px.scatter(
+    bus_cat_hold_loc_parquet.loc[bus_cat_hold_loc_parquet['CloseDate'] == date].groupby(['StateName'], as_index=False)['ReviewCount'].sum(),
+    x='StateName',
+    y='ReviewCount',
+    color='EstimatedPopulation'
+)
+
+fig.add_scatter(day, )
