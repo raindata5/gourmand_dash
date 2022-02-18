@@ -12,6 +12,8 @@ import plotly.express as px
 from dash.exceptions import PreventUpdate
 import datetime
 from typing import Union
+import numpy as np
+from random import choices
 
 def fig_template():
     fig = go.Figure()
@@ -31,6 +33,7 @@ def to_unix_or_reg(the_date: Union[str, int], the_format: str, option: str):
         print('no good option')
         exit(0)
     return new_date
+
 
 path = Path(os.getcwd())
 base_dir = path.parent
@@ -157,7 +160,8 @@ app.layout = html.Div([
                 id='cond-prob-chart2'
             )
             ,dcc.Slider(
-        id='payment-lvl-slider', min=0, max=4, step=1, dots=True, included=False, value=5, marks={
+        id='payment-lvl-slider'
+                , min=0, max=4, step=1, dots=True, included=False, value=4, marks={
             0: {'label': 'Unknown', 'style': {'color': electric1, 'fontWeight': 'bold'}},
             1: {'label': 'Very Low', 'style': {'color': electric1, 'fontWeight': 'bold'}},
             2: {'label': 'Low', 'style': {'color': electric1, 'fontWeight': 'bold'}},
@@ -165,15 +169,17 @@ app.layout = html.Div([
             4: {'label': 'Very High', 'style': {'color': electric1, 'fontWeight': 'bold'}}
                 }
             )
+            ,html.Br()
             ,dcc.Slider(
                 id='close-data-slider'
-                ,min=int(to_unix_or_reg(days[0], format, 'unix'))
-                ,max=int(to_unix_or_reg(days[-1], format, 'unix'))
-                ,step=1
+                ,min=int(to_unix_or_reg(days[::2][0], the_format, 'unix')) - 86400
+                ,max=int(to_unix_or_reg(days[::2][-1], the_format, 'unix')) + 86400
+                ,step=86400
                 ,dots=True
                 ,included=False
-                ,value= int(to_unix_or_reg('2022-01-13', format, 'unix'))
-                ,marks= {int(to_unix_or_reg(day, format, 'unix')): {'label': to_unix_or_reg(day, format, 'reg'), 'style':{'color': electric1, 'fontWeight':'bold'}}  for day in days}
+#                 ,value= int(to_unix_or_reg('2022-01-13', format, 'unix'))
+                ,tooltip= {"placement": "top", "always_visible": True}
+                ,marks= {int(to_unix_or_reg(day, the_format, 'unix')): {'label': day, 'style':{'color': electric1, 'fontWeight':'bold'}}  for day in days[::2]}
             )
             , dcc.Graph(
                 id='slider-graph'
@@ -184,15 +190,8 @@ app.layout = html.Div([
     ]
     )
 
-    
-#     ,dbc.Row(
-#             [
-#                 dbc.Col('BusinessID',width=1 ),
-#                 dbc.Col('BusinessName', width =2)
-#                 ]
-#             )
 ]
-#     , style={'backgroundColor': '#E5ECF6'}
+
     
 )
 
@@ -223,6 +222,7 @@ def plot_by_state_day(date, state):
     fig.layout.yaxis.title = 'runtime (seconds)'
     fig.layout.template = "ggplot2"
     return fig
+
 @app.callback(
     Output('review-delta-year-barchart', 'figure')
     ,Input('year-dropdown', 'value')
@@ -234,7 +234,6 @@ def plot_by_year(year):
     df=state_day_groups[state_day_groups['CloseDate'] == year].sort_values('abs_review_diff').reset_index(drop=True)
     pixel_constant= df.shape[0]
     fig = px.bar(df, y='StateName',x='abs_review_diff', title=' - '.join(['abs_review_diff', 'by State']),  orientation='h', height=200 + (20 * pixel_constant))
-
     return fig
 
 @app.callback(
@@ -312,17 +311,25 @@ def cond_prob_2(states):
     return fig
 @app.callback(
     Output('slider-graph', 'figure')
-    ,Input('payment-lvl-slider', 'value')
-    ,Input('close-data-slider', 'value')
+    ,Input('payment-lvl-slider', 'drag_value')
+    ,Input('payment-lvl-slider', 'marks')
+    ,Input('close-data-slider', 'drag_value')
+    ,Input('close-data-slider', 'marks')
 )
-def plot_day_payment_lvl(lvl, day):
-    day = bus_cat_hold_loc_parquet.loc[(bus_cat_hold_loc_parquet['PaymentLevelName'] == lvl) & (bus_cat_hold_loc_parquet['CloseDate'] == day)]
-    fig = go.Figure()
-    fig.layout.xaxis.title = lvl
-    fig.layout.yaxis.title = day
-    return fig
+def plot_day_payment_lvl(lvl,lvl_marks, day, day_marks):
+    # check out webgl
+    if (not lvl) or (not day):
+        raise PreventUpdate 
+    new_day = to_unix_or_reg(the_date=day, the_format=the_format, option='unix_reg')
+    lvl=lvl_marks[str(lvl)]['label']
+    day_df = bus_cat_hold_loc_parquet.loc[(bus_cat_hold_loc_parquet['PaymentLevelName'] == lvl) & (bus_cat_hold_loc_parquet['CloseDate'] == new_day)]
 
-# make usre to plug in zeros for fig
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=day_df['EstimatedPopulation'], y=day_df['abs_review_diff'], mode='markers', marker_color='rgba(152, 0, 0, .8)', opacity=.50))
+
+    fig.layout.xaxis.title = 'Estimated Population'
+    fig.layout.yaxis.title = 'Absolute Review Difference'
+    return fig
 
 
 # if __name__ == '__main__':
@@ -354,16 +361,3 @@ for trace in figlines.data:
     trace.showlegend = False
     fig.add_trace(trace)
 fig.show()
-
-#
-date = '2022-01-13'
-y = 'ReviewCount'
-
-px.scatter(
-    bus_cat_hold_loc_parquet.loc[bus_cat_hold_loc_parquet['CloseDate'] == date].groupby(['StateName'], as_index=False)['ReviewCount'].sum(),
-    x='StateName',
-    y='ReviewCount',
-    color='EstimatedPopulation'
-)
-
-fig.add_scatter(day, )
