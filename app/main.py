@@ -116,6 +116,25 @@ app.layout = html.Div([
                 html.A('Yelp', href='https://www.yelp.com/developers/documentation/v3')
                 ])
             ])
+            , dcc.Markdown(
+                """
+                ## Overview
+                This project looks to leverage multiple tools to create a data architecture that could help serve as the backend for a business and even the frontend (more on this in due time). While the initial focus was simply ony creating an data pipeline to move the data from one source <em>x</em> to a data warehouse <em>y</em> the project has evolved to include a number of supplementary technologies/features partially due to problems that arose out of the blue. Fortunately while there may not always be meer solutions to everything there's always a nice trade-off i.e. compromise.\
+                To begin we'll extract data from 3 sources ,namely, the **Census API** , a [web page]("https://www.50states.com/abbreviations.htm") via webscrape, and the **Yelp API** and push this to a **Postgres** database.\
+                Initially this will be used to simulate a source db using **dbt** to normalize the data as would be expected in most OLTP dbs.\
+                With that setup data from yelp will be pulled daily and inserted into this source db.\
+                From there the data will be extracted to an **S3 Bucket** which will serve as our de-facto data lake.\
+                Subsequently the data will be pulled from the **S3 Bucket** and ingested into some staging tables in Google Big Query ,that will serve as our data warehouse, where we'll make use of **dbt** to denormalize the data into a Snowflake Model.\
+                Once this is done some simple data validation checks will be carried out and we'll log these results and route them back to our **Postgres** db to create some metrics with them and send notifications via flask in the event of any issues.\
+                To orchestrate our recurring data workflow we'll use **Apache Airflow** with a **Postgres** Instance that is ran in a **Docker** container.
+                > Note: Now the code has been updated to run Apache Airflow completely in Docker with the CeleryExecutor 😀. So now this provides more scalibility if we plan on working with a multi-node setup. I just have yet to update the directions in this code.
+
+                Also using the **FastAPI** framework we'll be able to create an API on top of our source database with **Redis** to cache certain responses.
+                > Note: The our API has been fully dockerized and integrated as such with the CI/CD pipeline.
+
+                There are also other plans to extend this project which can be seen in the following data architecture diagram.
+                """
+            )
         ], label='Background Information')
     ,dbc.Tab([
         html.Br()
@@ -161,12 +180,12 @@ app.layout = html.Div([
             )
             ,dcc.Slider(
         id='payment-lvl-slider'
-                , min=0, max=4, step=1, dots=True, included=False, value=4, marks={
-            0: {'label': 'Unknown', 'style': {'color': electric1, 'fontWeight': 'bold'}},
-            1: {'label': 'Very Low', 'style': {'color': electric1, 'fontWeight': 'bold'}},
-            2: {'label': 'Low', 'style': {'color': electric1, 'fontWeight': 'bold'}},
-            3: {'label': 'High', 'style': {'color': electric1, 'fontWeight': 'bold'}},
-            4: {'label': 'Very High', 'style': {'color': electric1, 'fontWeight': 'bold'}}
+                , min=0, max=5, step=1, dots=True, included=False, value=1, marks={
+            1: {'label': 'Unknown', 'style': {'color': electric1, 'fontWeight': 'bold'}},
+            2: {'label': 'Very Low', 'style': {'color': electric1, 'fontWeight': 'bold'}},
+            3: {'label': 'Low', 'style': {'color': electric1, 'fontWeight': 'bold'}},
+            4: {'label': 'High', 'style': {'color': electric1, 'fontWeight': 'bold'}},
+            5: {'label': 'Very High', 'style': {'color': electric1, 'fontWeight': 'bold'}}
                 }
             )
             ,html.Br()
@@ -186,6 +205,15 @@ app.layout = html.Div([
             )
         ]
         ,label="Conditional Probabilities"
+    )
+    ,dbc.Tab(
+        [
+                dcc.Dropdown(
+                id='map_dropdown_menu', 
+                value='BusinessName',
+                options=[{'label':col, 'value':col} for col in country_counts.iloc[:, 2:]])
+                ,dcc.Graph(id='map1')
+        ] , label='maps'
     )
     ]
     )
@@ -331,10 +359,6 @@ def plot_day_payment_lvl(lvl,lvl_marks, day, day_marks):
     fig.layout.yaxis.title = 'Absolute Review Difference'
     return fig
 
-
-# if __name__ == '__main__':
-# app.run_server(mode='jupyterlab')
-
 app.run_server(mode='jupyterlab')
 
 
@@ -361,3 +385,27 @@ for trace in figlines.data:
     trace.showlegend = False
     fig.add_trace(trace)
 fig.show()
+
+
+app.layout = html.Div([dcc.Dropdown(id='map_dropdown_menu', 
+                value='BusinessName',
+                options=[{'label':col, 'value':col} for col in country_counts.iloc[:, 2:]]
+)
+                ,dcc.Graph(id='map1')
+                      ])
+@app.callback(Output('map1', 'figure'),
+ Input('map_dropdown_menu', 'value'))
+def state_map1(col: str):
+
+    fig= px.choropleth(data_frame=country_counts, locationmode='USA-states', locations='state_abrv' , 
+                    color=col, color_continuous_scale='amp', animation_frame='CloseDate', height=700, width=1000,
+                    hover_name='state_abrv')
+    fig.layout.title = col
+    fig.layout.geo.showframe = False
+    fig.layout.geo.showsubunits = True
+    fig.layout.geo.showcountries = True
+    fig.layout.geo.projection.type = 'natural earth'
+    fig.layout.geo.lonaxis.range = [-300,300]
+    fig.layout.geo.lataxis.range = [-53, 76]
+    return fig
+app.run_server(mode='inline')
