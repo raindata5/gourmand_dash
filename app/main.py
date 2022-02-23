@@ -14,6 +14,7 @@ import datetime
 from typing import Union
 import numpy as np
 from random import choices
+from utils import convert_state_name
 
 def fig_template():
     fig = go.Figure()
@@ -42,6 +43,11 @@ data_dir
 
 dv_runs = pd.read_csv(os.path.join(data_dir, "dv_runs.csv"), delimiter=',', quotechar='"', header='infer')
 bus_cat_hold_loc_parquet = pd.read_parquet(os.path.join(data_dir, 'bus_cat_hold_loc'), engine='pyarrow')
+bus_cat_hold_loc_parquet['state_abrv'] = bus_cat_hold_loc_parquet.StateName.apply(lambda x:convert_state_name(x)) 
+country_counts = bus_cat_hold_loc_parquet.groupby(
+    ['state_abrv', 'CloseDate'], as_index=False).agg({
+    'abs_review_diff': 'sum', 'abs_rating_diff':'sum', 'BusinessName': 'count'})
+
 df2_groups_pivoted_100_sorted_cut_imputed = pd.read_parquet(os.path.join(data_dir, 'df2_groups_pivoted_100_sorted_cut_imputed'), engine='pyarrow')
 electric1 = px.colors.sequential.Electric[0]
 days = sorted(bus_cat_hold_loc_parquet.CloseDate.unique().tolist())
@@ -106,17 +112,8 @@ app.layout = html.Div([
                 )
         ],label='Stats on States by Day')
         ,dbc.Tab([
-            html.Ul([
-                html.Br()
-                ,html.Li([
-                    'Github Repo: '
-                    ,html.A('gourmand-data-pipelines', href='https://github.com/raindata5/gourmand-data-pipelines')
-                ])
-                ,html.Li(['Source: ',
-                html.A('Yelp', href='https://www.yelp.com/developers/documentation/v3')
-                ])
-            ])
-            , dcc.Markdown(
+
+            dcc.Markdown(
                 """
                 ## Overview
                 This project looks to leverage multiple tools to create a data architecture that could help serve as the backend for a business and even the frontend (more on this in due time). While the initial focus was simply ony creating an data pipeline to move the data from one source <em>x</em> to a data warehouse <em>y</em> the project has evolved to include a number of supplementary technologies/features partially due to problems that arose out of the blue. Fortunately while there may not always be meer solutions to everything there's always a nice trade-off i.e. compromise.\
@@ -135,6 +132,16 @@ app.layout = html.Div([
                 There are also other plans to extend this project which can be seen in the following data architecture diagram.
                 """
             )
+            ,            html.Ul([
+                        html.Br()
+                        ,html.Li([
+                            'Github Repo: '
+                            ,html.A('gourmand-data-pipelines', href='https://github.com/raindata5/gourmand-data-pipelines')
+                        ])
+                        ,html.Li(['Source: ',
+                        html.A('Yelp', href='https://www.yelp.com/developers/documentation/v3')
+                        ])
+            ])
         ], label='Background Information')
     ,dbc.Tab([
         html.Br()
@@ -222,7 +229,23 @@ app.layout = html.Div([
 
     
 )
+@app.callback(
+    Output('map1', 'figure'),
+    Input('map_dropdown_menu', 'value')
+ )
+def state_map1(col: str):
 
+    fig= px.choropleth(data_frame=country_counts, locationmode='USA-states', locations='state_abrv' , 
+                    color=col, color_continuous_scale='amp', animation_frame='CloseDate', height=700, width=1000,
+                    hover_name='state_abrv')
+    fig.layout.title = col
+    fig.layout.geo.showframe = False
+    fig.layout.geo.showsubunits = True
+    fig.layout.geo.showcountries = True
+    fig.layout.geo.projection.type = 'natural earth'
+    fig.layout.geo.lonaxis.range = [-300,300]
+    fig.layout.geo.lataxis.range = [-53, 76]
+    return fig
 @app.callback(Output('runtime_chart','figure'),
              Input('date_dropdown_menu','value'),
              Input('dag_state_dropdown_menu','value'))
